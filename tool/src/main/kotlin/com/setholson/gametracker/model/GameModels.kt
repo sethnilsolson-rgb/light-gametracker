@@ -3,11 +3,19 @@ package com.setholson.gametracker.model
 import kotlinx.serialization.Serializable
 
 @Serializable
+enum class DayNightState(val label: String) {
+    NONE("Set Day/Night"),
+    DAY("☀ Day"),
+    NIGHT("☾ Night"),
+}
+
+@Serializable
 data class MtgPlayerState(
     val id: Int,
     val name: String,
     val life: Int,
     val poison: Int = 0,
+    val commanderCasts: Int = 0,
     val commanderDamage: Map<Int, Int> = emptyMap(), // opponentPlayerId -> damage taken
 )
 
@@ -19,15 +27,22 @@ data class MtgTableState(
     val showPoison: Boolean = false,
     val showMonarch: Boolean = false,
     val showCommanderDamage: Boolean = false,
+    val showCommanderTax: Boolean = false,
+    val showDayNight: Boolean = false,
+    val dayNight: DayNightState = DayNightState.NONE,
     val monarchPlayerId: Int? = null,
     val firstPlayerId: Int? = null,
 )
 
-fun defaultMtgPlayers(count: Int, startingLife: Int): List<MtgPlayerState> =
-    (1..count).map { idx ->
+fun defaultMtgPlayers(
+    count: Int,
+    startingLife: Int,
+    existingNames: Map<Int, String> = emptyMap(),
+): List<MtgPlayerState> =
+    (1..count.coerceIn(2, 6)).map { idx ->
         MtgPlayerState(
             id = idx,
-            name = "Player $idx",
+            name = existingNames[idx]?.takeIf { it.isNotBlank() } ?: "Player $idx",
             life = startingLife,
         )
     }
@@ -82,13 +97,18 @@ enum class ScoreboardPreset(
     val targetScore: Int?,
     val lowestWins: Boolean,
     val defaultPlayers: Int,
+    val isNertz: Boolean = false,
 ) {
     FREE("Free Score", null, false, 2),
+    NERTZ("Nertz (100)", 100, false, 4, isNertz = true),
     CATAN("Catan (10 VP)", 10, false, 4),
     UNO("Uno (500)", 500, false, 4),
-    SKYJO("Skyjo (Low Wins)", 100, true, 4),
+    SKYJO("Skyjo (Low)", 100, true, 4),
     SCRABBLE("Scrabble", null, false, 2),
-    HEARTS("Hearts (Low Wins)", 100, true, 4),
+    HEARTS("Hearts (Low)", 100, true, 4),
+    PHASE10("Phase 10", null, true, 4),
+    EUCHRE("Euchre (10)", 10, false, 4),
+    RUMMY("Rummy (500)", 500, false, 4),
 }
 
 enum class ChessClockPreset(

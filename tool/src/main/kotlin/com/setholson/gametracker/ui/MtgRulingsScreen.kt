@@ -268,7 +268,10 @@ class MtgRulingsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(LightThemeTokens.colors.background),
+                    .background(LightThemeTokens.colors.background)
+                    .swipeToBack {
+                        if (editorPurpose != null) viewModel.closeEditor() else goBack()
+                    },
             ) {
                 if (editorPurpose != null) {
                     val title = when (editorPurpose) {

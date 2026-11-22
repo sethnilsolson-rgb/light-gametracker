@@ -213,7 +213,11 @@ class ChessClockScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(LightThemeTokens.colors.background),
+                    .background(LightThemeTokens.colors.background)
+                    .swipeToBack(sideOnly = true, edgeThresholdPx = 110f) {
+                        viewModel.pause()
+                        goBack()
+                    },
             ) {
                 // Top Player (Player 2, rotated 180°)
                 ClockHalf(

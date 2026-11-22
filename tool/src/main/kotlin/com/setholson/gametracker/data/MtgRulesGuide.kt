@@ -126,6 +126,19 @@ object MtgRulesGuide {
             triggers = setOf("monarch", "initiative", "undercity"),
         ),
         MtgRulesTopic(
+            id = "day_night",
+            title = "Day / Night (Daybound & Nightbound)",
+            category = "Mechanics",
+            summary = "Once Day or Night starts, it stays tracked for the rest of the game—even if no Daybound permanents remain.",
+            keyPoints = listOf(
+                "Day → Night: If it is Day and the active player casts NO spells during their own turn, it becomes Night at the start of the next turn.",
+                "Night → Day: If it is Night and the active player casts TWO OR MORE spells during their own turn, it becomes Day at the start of the next turn.",
+                "Spells cast by opponents on the active player's turn do NOT count toward flipping Day or Night.",
+                "Daybound/Nightbound permanents enter transformed automatically to match whether it is currently Day or Night.",
+            ),
+            triggers = setOf("daybound", "nightbound", "becomes day", "becomes night", "it's day", "it's night"),
+        ),
+        MtgRulesTopic(
             id = "commander_rules",
             title = "Commander Damage & Command Zone",
             category = "Commander",

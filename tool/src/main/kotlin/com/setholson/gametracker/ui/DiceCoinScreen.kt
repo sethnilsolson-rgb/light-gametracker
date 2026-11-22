@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -19,7 +20,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewModelScope
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
@@ -35,10 +39,20 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 import com.thelightphone.sdk.ui.lightClickable
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlin.random.Random
+
+private sealed interface RollAction {
+    data object Coin : RollAction
+    data object TwoD6 : RollAction
+    data class Die(val sides: Int) : RollAction
+    data class FirstPlayer(val count: Int) : RollAction
+}
 
 class DiceCoinViewModel : LightViewModel<Unit>() {
 
@@ -48,36 +62,135 @@ class DiceCoinViewModel : LightViewModel<Unit>() {
     private val _detail = MutableStateFlow("Coin flip, dice, or pick who goes first")
     val detail: StateFlow<String> = _detail.asStateFlow()
 
+    private val _isRolling = MutableStateFlow(false)
+    val isRolling: StateFlow<Boolean> = _isRolling.asStateFlow()
+
+    private val _justLanded = MutableStateFlow(false)
+    val justLanded: StateFlow<Boolean> = _justLanded.asStateFlow()
+
+    private val _rollCount = MutableStateFlow(0)
+    val rollCount: StateFlow<Int> = _rollCount.asStateFlow()
+
     private val _history = MutableStateFlow<List<String>>(emptyList())
     val history: StateFlow<List<String>> = _history.asStateFlow()
 
-    private fun record(result: String, sub: String, logEntry: String) {
-        _headline.value = result
-        _detail.value = sub
-        _history.value = (listOf(logEntry) + _history.value).take(12)
+    private var lastAction: RollAction = RollAction.Die(20)
+    private var animJob: Job? = null
+
+    fun rerollLast(onTick: () -> Unit, onLand: () -> Unit) {
+        when (val action = lastAction) {
+            RollAction.Coin -> flipCoin(onTick, onLand)
+            RollAction.TwoD6 -> roll2D6(onTick, onLand)
+            is RollAction.Die -> rollDie(action.sides, onTick, onLand)
+            is RollAction.FirstPlayer -> pickFirstPlayer(action.count, onTick, onLand)
+        }
     }
 
-    fun flipCoin() {
-        val heads = Random.nextBoolean()
-        val label = if (heads) "HEADS" else "TAILS"
-        record(label, "Coin Flip", "Coin → $label")
+    fun flipCoin(onTick: () -> Unit = {}, onLand: () -> Unit = {}) {
+        lastAction = RollAction.Coin
+        runAnimatedRoll(
+            steps = 7,
+            baseDelayMs = 55L,
+            rollingLabel = "Flipping coin...",
+            frameGenerator = { step -> if (step % 2 == 0) "HEADS" else "TAILS" },
+            finalResult = {
+                val heads = Random.nextBoolean()
+                val label = if (heads) "HEADS" else "TAILS"
+                Triple(label, "Coin Flip", "Coin → $label")
+            },
+            onTick = onTick,
+            onLand = onLand,
+        )
     }
 
-    fun rollDie(sides: Int) {
-        val value = Random.nextInt(1, sides + 1)
-        record("$value", "D$sides Roll", "D$sides → $value")
+    fun rollDie(sides: Int, onTick: () -> Unit = {}, onLand: () -> Unit = {}) {
+        lastAction = RollAction.Die(sides)
+        runAnimatedRoll(
+            steps = 7,
+            baseDelayMs = 55L,
+            rollingLabel = "Rolling D$sides...",
+            frameGenerator = { "${Random.nextInt(1, sides + 1)}" },
+            finalResult = {
+                val value = Random.nextInt(1, sides + 1)
+                Triple("$value", "D$sides Roll", "D$sides → $value")
+            },
+            onTick = onTick,
+            onLand = onLand,
+        )
     }
 
-    fun roll2D6() {
-        val a = Random.nextInt(1, 7)
-        val b = Random.nextInt(1, 7)
-        val sum = a + b
-        record("$sum", "2D6 ($a + $b)", "2D6 → $sum ($a+$b)")
+    fun roll2D6(onTick: () -> Unit = {}, onLand: () -> Unit = {}) {
+        lastAction = RollAction.TwoD6
+        runAnimatedRoll(
+            steps = 7,
+            baseDelayMs = 55L,
+            rollingLabel = "Rolling 2D6...",
+            frameGenerator = { "${Random.nextInt(2, 13)}" },
+            finalResult = {
+                val a = Random.nextInt(1, 7)
+                val b = Random.nextInt(1, 7)
+                val sum = a + b
+                Triple("$sum", "2D6 ($a + $b)", "2D6 → $sum ($a+$b)")
+            },
+            onTick = onTick,
+            onLand = onLand,
+        )
     }
 
-    fun pickFirstPlayer(playerCount: Int) {
-        val winner = Random.nextInt(1, playerCount + 1)
-        record("Player $winner", "Goes first (out of $playerCount)", "First ($playerCount P) → Player $winner")
+    fun pickFirstPlayer(playerCount: Int, onTick: () -> Unit = {}, onLand: () -> Unit = {}) {
+        lastAction = RollAction.FirstPlayer(playerCount)
+        runAnimatedRoll(
+            steps = 10,
+            baseDelayMs = 65L,
+            rollingLabel = "Deciding 1st of $playerCount...",
+            frameGenerator = { step -> "Player ${(step % playerCount) + 1}" },
+            finalResult = {
+                val winner = Random.nextInt(1, playerCount + 1)
+                Triple(
+                    "Player $winner",
+                    "Goes first (out of $playerCount)",
+                    "1st ($playerCount P) → Player $winner",
+                )
+            },
+            onTick = onTick,
+            onLand = onLand,
+        )
+    }
+
+    private fun runAnimatedRoll(
+        steps: Int,
+        baseDelayMs: Long,
+        rollingLabel: String,
+        frameGenerator: (Int) -> String,
+        finalResult: () -> Triple<String, String, String>,
+        onTick: () -> Unit,
+        onLand: () -> Unit,
+    ) {
+        animJob?.cancel()
+        animJob = viewModelScope.launch {
+            _isRolling.value = true
+            _justLanded.value = false
+            _detail.value = rollingLabel
+
+            for (i in 0 until steps) {
+                _headline.value = frameGenerator(i)
+                onTick()
+                delay(baseDelayMs + (i * 12L))
+            }
+
+            val (result, sub, logEntry) = finalResult()
+            val nextNum = _rollCount.value + 1
+            _rollCount.value = nextNum
+            _headline.value = result
+            _detail.value = "$sub • Roll #$nextNum (tap box to re-roll)"
+            _history.value = (listOf("#$nextNum  $logEntry") + _history.value).take(14)
+            _isRolling.value = false
+            _justLanded.value = true
+            onLand()
+
+            delay(450L)
+            _justLanded.value = false
+        }
     }
 }
 
@@ -95,14 +208,23 @@ class DiceCoinScreen(
         val themeColors by LightThemeController.colors.collectAsState()
         val headline by viewModel.headline.collectAsState()
         val detail by viewModel.detail.collectAsState()
+        val isRolling by viewModel.isRolling.collectAsState()
+        val justLanded by viewModel.justLanded.collectAsState()
         val history by viewModel.history.collectAsState()
         val haptics = LocalHapticFeedback.current
 
+        val tickHaptic = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+        val landHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+
         LightTheme(colors = themeColors) {
+            val content = LightThemeTokens.colors.content
+            val bg = LightThemeTokens.colors.background
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(LightThemeTokens.colors.background),
+                    .background(bg)
+                    .swipeToBack { goBack() },
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     LightTopBar(
@@ -114,23 +236,42 @@ class DiceCoinScreen(
                         modifier = Modifier.padding(bottom = 0.25f.gridUnitsAsDp()),
                     )
 
-                    // Big Result Display Box
+                    // High-contrast interactive Result Card (flashes inverted on land; tap to re-roll!)
+                    val boxBg = if (justLanded) content else bg
+                    val boxFg = if (justLanded) bg else content
+                    val borderAlpha = when {
+                        justLanded -> 1f
+                        isRolling -> 0.9f
+                        else -> 0.45f
+                    }
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 1.5f.gridUnitsAsDp(), vertical = 8.dp)
+                            .background(boxBg, RoundedCornerShape(8.dp))
                             .border(
-                                width = 1.dp,
-                                color = LightThemeTokens.colors.content.copy(alpha = 0.45f),
+                                width = if (isRolling || justLanded) 2.dp else 1.dp,
+                                color = content.copy(alpha = borderAlpha),
                                 shape = RoundedCornerShape(8.dp),
                             )
-                            .padding(vertical = 18.dp, horizontal = 12.dp),
+                            .lightClickable { viewModel.rerollLast(tickHaptic, landHaptic) }
+                            .padding(vertical = 20.dp, horizontal = 12.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            LightText(text = headline, variant = LightTextVariant.Title)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LightText(text = detail, variant = LightTextVariant.Detail, lighten = true)
+                            Text(
+                                text = headline,
+                                fontSize = 36.sp,
+                                fontWeight = if (justLanded) FontWeight.Bold else FontWeight.Light,
+                                color = boxFg,
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = detail,
+                                fontSize = 12.sp,
+                                color = boxFg.copy(alpha = if (justLanded) 0.9f else 0.7f),
+                            )
                         }
                     }
 
@@ -157,16 +298,13 @@ class DiceCoinScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             DiceButton("Coin", Modifier.weight(1f)) {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                viewModel.flipCoin()
+                                viewModel.flipCoin(tickHaptic, landHaptic)
                             }
                             DiceButton("2D6", Modifier.weight(1f)) {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                viewModel.roll2D6()
+                                viewModel.roll2D6(tickHaptic, landHaptic)
                             }
                             DiceButton("D20", Modifier.weight(1f)) {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                viewModel.rollDie(20)
+                                viewModel.rollDie(20, tickHaptic, landHaptic)
                             }
                         }
 
@@ -180,8 +318,7 @@ class DiceCoinScreen(
                         ) {
                             listOf(4, 6, 8, 10, 12).forEach { sides ->
                                 DiceButton("D$sides", Modifier.weight(1f)) {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    viewModel.rollDie(sides)
+                                    viewModel.rollDie(sides, tickHaptic, landHaptic)
                                 }
                             }
                         }
@@ -203,8 +340,7 @@ class DiceCoinScreen(
                         ) {
                             listOf(2, 3, 4, 5, 6).forEach { count ->
                                 DiceButton("${count}P", Modifier.weight(1f)) {
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    viewModel.pickFirstPlayer(count)
+                                    viewModel.pickFirstPlayer(count, tickHaptic, landHaptic)
                                 }
                             }
                         }
@@ -248,7 +384,7 @@ private fun DiceButton(
                 shape = RoundedCornerShape(6.dp),
             )
             .lightClickable(onClick = onClick)
-            .padding(vertical = 11.dp),
+            .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         LightText(text = label, variant = LightTextVariant.Paragraph)

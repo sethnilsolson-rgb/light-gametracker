@@ -22,6 +22,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -73,6 +76,9 @@ class ScoreboardViewModel(
     private val _editAction = MutableStateFlow<ScoreboardEditAction?>(null)
     val editAction: StateFlow<ScoreboardEditAction?> = _editAction.asStateFlow()
 
+    private val _nertzCalcPlayerId = MutableStateFlow<Int?>(null)
+    val nertzCalcPlayerId: StateFlow<Int?> = _nertzCalcPlayerId.asStateFlow()
+
     init {
         viewModelScope.launch {
             repository.loadScoreboardState()?.let { saved ->
@@ -113,6 +119,16 @@ class ScoreboardViewModel(
                 }
             )
         }
+    }
+
+    fun openNertzCalc(playerId: Int?) {
+        _nertzCalcPlayerId.value = playerId
+    }
+
+    fun applyNertzRound(playerId: Int, centerCardsPlayed: Int, nertzPileLeft: Int) {
+        val delta = centerCardsPlayed - (nertzPileLeft * 2)
+        adjustScore(playerId, delta)
+        _nertzCalcPlayerId.value = null
     }
 
     fun addPlayer() {
@@ -197,16 +213,25 @@ class ScoreboardScreen(
         val themeColors by LightThemeController.colors.collectAsState()
         val state by viewModel.state.collectAsState()
         val editAction by viewModel.editAction.collectAsState()
+        val nertzPlayerId by viewModel.nertzCalcPlayerId.collectAsState()
         val haptics = LocalHapticFeedback.current
 
         val textFieldState = rememberTextFieldState("")
         val keyboardOptionsFlow = rememberKeyboardOptions()
+        val isNertzMode = state.gameName.contains("Nertz", ignoreCase = true)
 
         LightTheme(colors = themeColors) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(LightThemeTokens.colors.background),
+                    .background(LightThemeTokens.colors.background)
+                    .swipeToBack {
+                        when {
+                            nertzPlayerId != null -> viewModel.openNertzCalc(null)
+                            editAction != null -> viewModel.cancelEdit()
+                            else -> goBack()
+                        }
+                    },
             ) {
                 if (editAction != null) {
                     val title = when (val act = editAction) {
@@ -298,6 +323,7 @@ class ScoreboardScreen(
                             val ruleSummary = buildString {
                                 append(if (state.lowestWins) "Lowest score wins" else "Highest score wins")
                                 state.targetScore?.let { append(" • Goal: $it") }
+                                if (isNertzMode) append(" • +1 played, −2 Nertz left")
                             }
                             LightText(text = ruleSummary, variant = LightTextVariant.Detail, lighten = true)
                         }
@@ -383,27 +409,47 @@ class ScoreboardScreen(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     ) {
-                                        ScoreStepBtn("−5", Modifier.weight(1f)) {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            viewModel.adjustScore(player.id, -5)
-                                        }
-                                        ScoreStepBtn("−1", Modifier.weight(1f)) {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            viewModel.adjustScore(player.id, -1)
-                                        }
-                                        ScoreStepBtn("+1", Modifier.weight(1f)) {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            viewModel.adjustScore(player.id, 1)
-                                        }
-                                        ScoreStepBtn("+5", Modifier.weight(1f)) {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            viewModel.adjustScore(player.id, 5)
-                                        }
-                                        ScoreStepBtn("±N", Modifier.weight(1f)) {
-                                            textFieldState.setTextAndPlaceCursorAtEnd("")
-                                            viewModel.startEdit(
-                                                ScoreboardEditAction.CustomDelta(player.id, player.name)
-                                            )
+                                        if (isNertzMode) {
+                                            ScoreStepBtn("Nertz Round", Modifier.weight(1.9f)) {
+                                                viewModel.openNertzCalc(player.id)
+                                            }
+                                            ScoreStepBtn("−2", Modifier.weight(0.9f)) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                viewModel.adjustScore(player.id, -2)
+                                            }
+                                            ScoreStepBtn("+1", Modifier.weight(0.9f)) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                viewModel.adjustScore(player.id, 1)
+                                            }
+                                            ScoreStepBtn("±N", Modifier.weight(0.9f)) {
+                                                textFieldState.setTextAndPlaceCursorAtEnd("")
+                                                viewModel.startEdit(
+                                                    ScoreboardEditAction.CustomDelta(player.id, player.name)
+                                                )
+                                            }
+                                        } else {
+                                            ScoreStepBtn("−5", Modifier.weight(1f)) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                viewModel.adjustScore(player.id, -5)
+                                            }
+                                            ScoreStepBtn("−1", Modifier.weight(1f)) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                viewModel.adjustScore(player.id, -1)
+                                            }
+                                            ScoreStepBtn("+1", Modifier.weight(1f)) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                viewModel.adjustScore(player.id, 1)
+                                            }
+                                            ScoreStepBtn("+5", Modifier.weight(1f)) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                viewModel.adjustScore(player.id, 5)
+                                            }
+                                            ScoreStepBtn("±N", Modifier.weight(1f)) {
+                                                textFieldState.setTextAndPlaceCursorAtEnd("")
+                                                viewModel.startEdit(
+                                                    ScoreboardEditAction.CustomDelta(player.id, player.name)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -417,7 +463,7 @@ class ScoreboardScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
                             LightText(
-                                text = "Tap a player name to rename • Tap ±N for custom points (e.g. 25 or -10).",
+                                text = "Tap a player name to rename • Tap ±N for custom points.",
                                 variant = LightTextVariant.Detail,
                                 lighten = true,
                                 modifier = Modifier.padding(end = sidePad, bottom = 12.dp),
@@ -440,7 +486,126 @@ class ScoreboardScreen(
                             }
                         }
                     }
+
+                    // Nertz Round Calculator Overlay
+                    nertzPlayerId?.let { pid ->
+                        val target = state.players.find { it.id == pid }
+                        if (target != null) {
+                            NertzRoundOverlay(
+                                player = target,
+                                onApply = { played, left ->
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.applyNertzRound(pid, played, left)
+                                },
+                                onDismiss = { viewModel.openNertzCalc(null) },
+                            )
+                        }
+                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NertzRoundOverlay(
+    player: ScorePlayer,
+    onApply: (centerPlayed: Int, nertzLeft: Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val bg = LightThemeTokens.colors.background
+    val content = LightThemeTokens.colors.content
+    var centerPlayed by remember(player.id) { mutableIntStateOf(0) }
+    var nertzLeft by remember(player.id) { mutableIntStateOf(0) }
+    val roundTotal = centerPlayed - (nertzLeft * 2)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bg.copy(alpha = 0.97f))
+            .padding(16.dp),
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                LightText(text = "${player.name} — Nertz Round", variant = LightTextVariant.Subheading)
+                Box(
+                    modifier = Modifier
+                        .border(1.dp, content.copy(alpha = 0.6f), RoundedCornerShape(5.dp))
+                        .lightClickable(onClick = onDismiss)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    LightText(text = "Cancel", variant = LightTextVariant.Detail)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Cards played to center (+1 each)
+            LightText(text = "CARDS IN CENTER (+1 EACH)", variant = LightTextVariant.Detail, lighten = true)
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                ScoreStepBtn("−5", Modifier.weight(1f)) { centerPlayed = (centerPlayed - 5).coerceAtLeast(0) }
+                ScoreStepBtn("−1", Modifier.weight(1f)) { centerPlayed = (centerPlayed - 1).coerceAtLeast(0) }
+                Text(
+                    text = "$centerPlayed",
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = content,
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                )
+                ScoreStepBtn("+1", Modifier.weight(1f)) { centerPlayed += 1 }
+                ScoreStepBtn("+5", Modifier.weight(1f)) { centerPlayed += 5 }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // Cards left in Nertz pile (-2 each)
+            LightText(text = "NERTZ PILE REMAINING (−2 EACH)", variant = LightTextVariant.Detail, lighten = true)
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                ScoreStepBtn("0", Modifier.weight(1f)) { nertzLeft = 0 }
+                ScoreStepBtn("−1", Modifier.weight(1f)) { nertzLeft = (nertzLeft - 1).coerceAtLeast(0) }
+                Text(
+                    text = "$nertzLeft",
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = content,
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                )
+                ScoreStepBtn("+1", Modifier.weight(1f)) { nertzLeft = (nertzLeft + 1).coerceAtMost(13) }
+                ScoreStepBtn("+3", Modifier.weight(1f)) { nertzLeft = (nertzLeft + 3).coerceAtMost(13) }
+            }
+
+            Spacer(modifier = Modifier.height(22.dp))
+
+            // Preview + Apply
+            val sign = if (roundTotal >= 0) "+$roundTotal" else "$roundTotal"
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(content, RoundedCornerShape(6.dp))
+                    .lightClickable { onApply(centerPlayed, nertzLeft) }
+                    .padding(vertical = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Add Round Score ($sign)",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = bg,
+                )
             }
         }
     }

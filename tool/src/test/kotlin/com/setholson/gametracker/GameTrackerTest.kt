@@ -118,4 +118,20 @@ class GameTrackerTest {
         assertEquals("0:19.5", formatClockMillis(19_500L))
         assertEquals("0:00.0", formatClockMillis(0L))
     }
+
+    @Test
+    fun customPlayersAndDayNight_preservedInModelsAndGuide() {
+        val players = defaultMtgPlayers(
+            count = 5,
+            startingLife = 40,
+            existingNames = mapOf(1 to "Seth", 2 to "Alex"),
+        )
+        assertEquals(5, players.size)
+        assertEquals("Seth", players[0].name)
+        assertEquals("Alex", players[1].name)
+        assertEquals("Player 5", players[4].name)
+
+        val dayNightResults = MtgRulesGuide.searchTopics("daybound")
+        assertTrue(dayNightResults.any { it.id == "day_night" })
+    }
 }

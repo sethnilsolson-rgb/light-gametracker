@@ -133,12 +133,15 @@ class HomeScreen(
                             modifier = Modifier.padding(end = rightPad, bottom = 6.dp),
                         )
 
-                        // Resume ongoing match if active
+                        // Resume ongoing match if active (with player names for easy pickup!)
                         savedMtg?.let { active ->
-                            val lifeSummary = active.players.joinToString(" • ") { "${it.life}" }
+                            val lifeSummary = active.players.joinToString(" • ") { p ->
+                                val short = p.name.take(8)
+                                "$short ${p.life}"
+                            }
                             HomeActionRow(
                                 title = "Resume ${active.playerCount}P Match",
-                                subtitle = "Life: $lifeSummary",
+                                subtitle = lifeSummary,
                                 badge = "Active",
                                 onClick = {
                                     navigateTo(screenFactory = { act ->
@@ -167,7 +170,7 @@ class HomeScreen(
 
                         HomeActionRow(
                             title = "4-Player Commander",
-                            subtitle = "40 life • Optional poison, monarch & cmd dmg",
+                            subtitle = "40 life • Supports 2–6 players in Options",
                             onClick = {
                                 navigateTo(screenFactory = { act ->
                                     MtgTrackerScreen(act, presetPlayers = 4, presetLife = 40)
@@ -201,7 +204,7 @@ class HomeScreen(
 
                         HomeActionRow(
                             title = "Scoreboard (2–8 Players)",
-                            subtitle = "Catan, Uno, Skyjo, Scrabble, Hearts & custom games",
+                            subtitle = "Nertz, Catan, Uno, Skyjo, Scrabble, Hearts & more",
                             onClick = {
                                 navigateTo(screenFactory = { act -> ScoreboardScreen(act) })
                             },
