@@ -156,7 +156,9 @@ class GameTrackerTest {
         assertEquals(2, afterR1.roundNumber)
         assertEquals(2, afterR1.firstPlayerIndex) // Maya (index 2) won -> goes 1st next round
         assertEquals(1, afterR1.players[2].roundWins)
-        assertEquals(0, afterR1.players[0].currentRoundScore) // scores reset
+        assertEquals(12, afterR1.players[0].currentRoundScore) // scores persist between rounds!
+        assertEquals(8, afterR1.players[1].currentRoundScore)
+        assertEquals(12, afterR1.players[2].currentRoundScore)
         assertEquals(2, afterR1.hurtFeelingsPlayerId) // Alex had lowest
         assertTrue(afterR1.history.first().wonByTiebreak)
         assertEquals("Alex", afterR1.history.first().hurtFeelingsName)

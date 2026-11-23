@@ -86,6 +86,7 @@ data class ScoreboardState(
     val gameName: String = "Free Score",
     val targetScore: Int? = null,
     val lowestWins: Boolean = false,
+    val isTableView: Boolean = false,
     val players: List<ScorePlayer> = listOf(
         ScorePlayer(1, "Player 1"),
         ScorePlayer(2, "Player 2"),
@@ -161,6 +162,7 @@ data class MoodSwingsState(
     val roundNumber: Int = 1,
     val targetWins: Int = 3,
     val firstPlayerIndex: Int = 0,
+    val isTableView: Boolean = true,
     val players: List<MoodSwingsPlayer> = defaultMoodSwingsPlayers(MoodSwingsMode.TWO_PLAYER),
     val hurtFeelingsPlayerId: Int? = null,
     val winnerId: Int? = null,
@@ -233,9 +235,10 @@ fun resolveMoodSwingsRound(state: MoodSwingsState): MoodSwingsState {
     }
 
     val scoresSummary = state.players.joinToString(" · ") { "${it.name.take(8)} ${it.currentRoundScore}" }
+    // Keep each player's mood score between rounds (moods remain on the board round-to-round)
     val updatedPlayers = state.players.map { p ->
         val nextWins = if (p.id == winner.id) p.roundWins + 1 else p.roundWins
-        p.copy(roundWins = nextWins, currentRoundScore = 0)
+        p.copy(roundWins = nextWins)
     }
 
     val newWinnerWins = updatedPlayers[winnerIdx].roundWins
