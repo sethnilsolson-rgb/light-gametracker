@@ -38,6 +38,9 @@ interface GameDao {
     @Query("SELECT * FROM cached_mtg_cards WHERE nameKey LIKE :prefix || '%' ORDER BY cachedAt DESC LIMIT 12")
     suspend fun searchCardsPrefix(prefix: String): List<CachedMtgCardEntity>
 
+    @Query("SELECT displayName FROM cached_mtg_cards ORDER BY cachedAt DESC LIMIT 200")
+    suspend fun getAllCachedCardNames(): List<String>
+
     @Query("SELECT * FROM cached_mtg_cards ORDER BY cachedAt DESC LIMIT 40")
     suspend fun getRecentCards(): List<CachedMtgCardEntity>
 

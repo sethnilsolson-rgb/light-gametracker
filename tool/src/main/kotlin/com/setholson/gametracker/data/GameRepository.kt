@@ -76,9 +76,8 @@ class GameRepository(
     suspend fun autocompleteCardNames(query: String): List<String> = withContext(Dispatchers.IO) {
         val key = normalizeCardKey(query)
         if (key.length < 2) return@withContext emptyList()
-        val local = database.gameDao().searchCardsPrefix(key).map { it.displayName }
-        val remote = ScryfallService.autocomplete(query)
-        (local + remote).distinctBy { it.lowercase(Locale.US) }.take(10)
+        val localNames = database.gameDao().getAllCachedCardNames()
+        ScryfallService.suggestCardNames(query = query, localCachedNames = localNames, limit = 12)
     }
 
     suspend fun lookupCard(query: String, forceRefresh: Boolean = false): Result<MtgCardDetail> =

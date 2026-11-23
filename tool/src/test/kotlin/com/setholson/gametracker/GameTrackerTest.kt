@@ -202,4 +202,53 @@ class GameTrackerTest {
         assertEquals(1, next.players[0].roundWins)
         assertEquals(null, next.hurtFeelingsPlayerId)
     }
+
+    @Test
+    fun scryfallCandidateRanking_handlesTyposPartialWordsAndFiltersNoise() {
+        val pool = listOf(
+            "Lightning Helix",
+            "Lightning Bolt",
+            "Lightning Greaves",
+            "Doubling Season",
+            "Blood Moon",
+            "Sword of Fire and Ice",
+            "Sword of Feast and Famine",
+            "Sol Ring",
+            "Rhystic Study",
+            "Unrelated Goblin",
+        )
+
+        // Typo in first word ("Lightening Bolt") ranks Lightning Bolt #1
+        val boltMatches = com.setholson.gametracker.data.ScryfallService.rankCardCandidates(
+            query = "Lightening Bolt",
+            candidates = pool,
+            remoteConfirmed = pool.toSet(),
+        )
+        assertEquals("Lightning Bolt", boltMatches.first())
+
+        // Partial out-of-order words ("sword fire ice") ranks Sword of Fire and Ice #1
+        val swordMatches = com.setholson.gametracker.data.ScryfallService.rankCardCandidates(
+            query = "sword fire ice",
+            candidates = pool,
+            remoteConfirmed = pool.toSet(),
+        )
+        assertEquals("Sword of Fire and Ice", swordMatches.first())
+
+        // Offline typo ("Blod Mon") finds Blood Moon and excludes unrelated cards
+        val offlineMatches = com.setholson.gametracker.data.ScryfallService.rankCardCandidates(
+            query = "Blod Mon",
+            candidates = pool,
+            remoteConfirmed = emptySet(),
+        )
+        assertEquals("Blood Moon", offlineMatches.first())
+        assertTrue("Unrelated Goblin" !in offlineMatches)
+
+        // Missing vowel typo ("Doublng Seson") finds Doubling Season
+        val seasonMatches = com.setholson.gametracker.data.ScryfallService.rankCardCandidates(
+            query = "Doublng Seson",
+            candidates = pool,
+            remoteConfirmed = pool.toSet(),
+        )
+        assertEquals("Doubling Season", seasonMatches.first())
+    }
 }

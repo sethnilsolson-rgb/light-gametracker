@@ -85,6 +85,9 @@ class MtgRulingsViewModel(
     private val _suggestions = MutableStateFlow<List<String>>(emptyList())
     val suggestions: StateFlow<List<String>> = _suggestions.asStateFlow()
 
+    private val _pendingAssignSlot = MutableStateFlow<String?>(null)
+    val pendingAssignSlot: StateFlow<String?> = _pendingAssignSlot.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -123,6 +126,8 @@ class MtgRulingsViewModel(
     fun selectTab(newTab: RulingsTab) {
         _tab.value = newTab
         _errorMessage.value = null
+        _suggestions.value = emptyList()
+        _pendingAssignSlot.value = null
     }
 
     fun openEditor(purpose: EditorPurpose) {
@@ -154,17 +159,35 @@ class MtgRulingsViewModel(
         }
     }
 
+    fun pickSuggestion(cardName: String) {
+        val slot = _pendingAssignSlot.value
+        lookupCard(cardName, forceRefresh = false, assignToSlot = slot)
+    }
+
+    fun dismissSuggestions() {
+        _suggestions.value = emptyList()
+        _errorMessage.value = null
+        _pendingAssignSlot.value = null
+    }
+
     fun lookupCard(query: String, forceRefresh: Boolean = false, assignToSlot: String? = null) {
         val trimmed = query.trim()
         if (trimmed.isBlank()) return
         _searchQuery.value = trimmed
         _errorMessage.value = null
         _suggestions.value = emptyList()
+        _pendingAssignSlot.value = assignToSlot
+
+        if (trimmed.length < 2) {
+            _errorMessage.value = "Enter at least 2 characters to search."
+            return
+        }
 
         viewModelScope.launch {
             _isLoading.value = true
             val result = repository.lookupCard(trimmed, forceRefresh = forceRefresh)
             result.onSuccess { card ->
+                _pendingAssignSlot.value = null
                 _selectedCard.value = card
                 if (assignToSlot == "A") {
                     _cardA.value = card
@@ -175,11 +198,19 @@ class MtgRulingsViewModel(
                 }
                 _recentCards.value = repository.getRecentCachedCards()
             }.onFailure { err ->
+                if (assignToSlot == null) {
+                    _selectedCard.value = null
+                }
                 val alts = repository.autocompleteCardNames(trimmed)
                 _suggestions.value = alts
                 _errorMessage.value = if (alts.isNotEmpty()) {
-                    "Multiple matches—tap a card below:"
+                    when (assignToSlot) {
+                        "A" -> "Did you mean? Tap a card for Card A:"
+                        "B" -> "Did you mean? Tap a card for Card B:"
+                        else -> "Did you mean? Tap a card below:"
+                    }
                 } else {
+                    _pendingAssignSlot.value = null
                     err.message ?: "Card not found. Check spelling or Wi-Fi connection."
                 }
             }
@@ -352,7 +383,7 @@ class MtgRulingsScreen(
                                     textFieldState.setTextAndPlaceCursorAtEnd(searchQuery)
                                     viewModel.openEditor(EditorPurpose.LOOKUP_CARD)
                                 },
-                                onPickSuggestion = { name -> viewModel.lookupCard(name) },
+                                onPickSuggestion = { name -> viewModel.pickSuggestion(name) },
                                 onOpenCached = { card -> viewModel.openCachedCard(card) },
                                 onRefreshCard = { card -> viewModel.lookupCard(card.name, forceRefresh = true) },
                                 onClearCard = { viewModel.clearSelectedCard() },
@@ -369,6 +400,7 @@ class MtgRulingsScreen(
                                 cardB = cardB,
                                 isLoading = isLoading,
                                 errorMessage = errorMessage,
+                                suggestions = suggestions,
                                 expandedTopicId = expandedTopicId,
                                 onPickA = {
                                     textFieldState.setTextAndPlaceCursorAtEnd(cardA?.name.orEmpty())
@@ -378,6 +410,8 @@ class MtgRulingsScreen(
                                     textFieldState.setTextAndPlaceCursorAtEnd(cardB?.name.orEmpty())
                                     viewModel.openEditor(EditorPurpose.PICK_CARD_B)
                                 },
+                                onPickSuggestion = { name -> viewModel.pickSuggestion(name) },
+                                onDismissSuggestions = { viewModel.dismissSuggestions() },
                                 onClearA = { viewModel.clearCardA() },
                                 onClearB = { viewModel.clearCardB() },
                                 onToggleTopic = { id -> viewModel.toggleTopic(id) },
@@ -469,18 +503,29 @@ private fun LookupTabContent(
 
             if (suggestions.isNotEmpty()) {
                 suggestions.forEach { name ->
-                    Box(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(end = sidePad)
                             .lightClickable { onPickSuggestion(name) }
-                            .padding(vertical = 8.dp),
+                            .padding(vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        LightText(text = name, variant = LightTextVariant.Paragraph)
+                        LightText(
+                            text = name,
+                            variant = LightTextVariant.Paragraph,
+                            modifier = Modifier.weight(1f),
+                        )
+                        LightText(
+                            text = "→",
+                            variant = LightTextVariant.Detail,
+                            lighten = true,
+                        )
                     }
                     HorizontalDivider(
                         thickness = 0.5.dp,
-                        color = content.copy(alpha = 0.18f),
+                        color = content.copy(alpha = 0.22f),
                         modifier = Modifier.padding(end = sidePad),
                     )
                 }
@@ -661,15 +706,19 @@ private fun CompareTabContent(
     cardB: MtgCardDetail?,
     isLoading: Boolean,
     errorMessage: String?,
+    suggestions: List<String>,
     expandedTopicId: String?,
     onPickA: () -> Unit,
     onPickB: () -> Unit,
+    onPickSuggestion: (String) -> Unit,
+    onDismissSuggestions: () -> Unit,
     onClearA: () -> Unit,
     onClearB: () -> Unit,
     onToggleTopic: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val sidePad = 1.5f.gridUnitsAsDp()
+    val content = LightThemeTokens.colors.content
     val interactions = MtgRulesGuide.detectInteractions(cardA, cardB)
 
     LightScrollView(
@@ -708,11 +757,53 @@ private fun CompareTabContent(
             )
         }
         errorMessage?.let { msg ->
-            LightText(
-                text = msg,
-                variant = LightTextVariant.Detail,
-                modifier = Modifier.padding(end = sidePad, top = 8.dp),
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = sidePad, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                LightText(
+                    text = msg,
+                    variant = LightTextVariant.Detail,
+                    modifier = Modifier.weight(1f),
+                )
+                if (suggestions.isNotEmpty()) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    MiniPill("Cancel", onDismissSuggestions)
+                }
+            }
+        }
+
+        if (suggestions.isNotEmpty()) {
+            suggestions.forEach { name ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = sidePad)
+                        .lightClickable { onPickSuggestion(name) }
+                        .padding(vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    LightText(
+                        text = name,
+                        variant = LightTextVariant.Paragraph,
+                        modifier = Modifier.weight(1f),
+                    )
+                    LightText(
+                        text = "→",
+                        variant = LightTextVariant.Detail,
+                        lighten = true,
+                    )
+                }
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = content.copy(alpha = 0.22f),
+                    modifier = Modifier.padding(end = sidePad),
+                )
+            }
         }
 
         if (interactions.isNotEmpty()) {
