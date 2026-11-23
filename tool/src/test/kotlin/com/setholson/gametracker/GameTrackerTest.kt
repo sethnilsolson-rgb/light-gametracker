@@ -134,4 +134,70 @@ class GameTrackerTest {
         val dayNightResults = MtgRulesGuide.searchTopics("daybound")
         assertTrue(dayNightResults.any { it.id == "day_night" })
     }
+
+    @Test
+    fun moodSwings_resolvesTiebreakByTurnOrderAndHurtFeelingsByLatestTurn() {
+        // 3-player game where Player 2 (index 1) went 1st:
+        // Turn order: P2 (1st), P3 (2nd), P1 (3rd).
+        // P1 and P3 tie for highest (12); P3 went earlier (2nd vs 3rd), so P3 wins the tiebreak!
+        // P2 has the lowest (8), so P2 gets Hurt Feelings.
+        val initial = com.setholson.gametracker.model.MoodSwingsState(
+            mode = com.setholson.gametracker.model.MoodSwingsMode.THREE_PLAYER,
+            roundNumber = 1,
+            firstPlayerIndex = 1,
+            players = listOf(
+                com.setholson.gametracker.model.MoodSwingsPlayer(1, "Seth", roundWins = 0, currentRoundScore = 12),
+                com.setholson.gametracker.model.MoodSwingsPlayer(2, "Alex", roundWins = 0, currentRoundScore = 8),
+                com.setholson.gametracker.model.MoodSwingsPlayer(3, "Maya", roundWins = 0, currentRoundScore = 12),
+            ),
+        )
+
+        val afterR1 = com.setholson.gametracker.model.resolveMoodSwingsRound(initial)
+        assertEquals(2, afterR1.roundNumber)
+        assertEquals(2, afterR1.firstPlayerIndex) // Maya (index 2) won -> goes 1st next round
+        assertEquals(1, afterR1.players[2].roundWins)
+        assertEquals(0, afterR1.players[0].currentRoundScore) // scores reset
+        assertEquals(2, afterR1.hurtFeelingsPlayerId) // Alex had lowest
+        assertTrue(afterR1.history.first().wonByTiebreak)
+        assertEquals("Alex", afterR1.history.first().hurtFeelingsName)
+
+        // Round 2: Maya (index 2) is 1st -> order: Maya (1st), Seth (2nd), Alex (3rd).
+        // Maya scores 15, Seth & Alex tie for lowest at 9 -> Alex went LATEST (3rd) so Alex gets Hurt Feelings!
+        val r2Input = afterR1.copy(
+            players = afterR1.players.map { p ->
+                when (p.id) {
+                    3 -> p.copy(currentRoundScore = 15)
+                    else -> p.copy(currentRoundScore = 9)
+                }
+            },
+        )
+        val afterR2 = com.setholson.gametracker.model.resolveMoodSwingsRound(r2Input)
+        assertEquals(2, afterR2.players[2].roundWins)
+        assertEquals(2, afterR2.hurtFeelingsPlayerId) // Alex went 3rd (latest) among tied-for-lowest
+
+        // Round 3: Maya wins 3rd round -> match winner!
+        val r3Input = afterR2.copy(
+            players = afterR2.players.map { p ->
+                if (p.id == 3) p.copy(currentRoundScore = 20) else p.copy(currentRoundScore = 10)
+            },
+        )
+        val afterR3 = com.setholson.gametracker.model.resolveMoodSwingsRound(r3Input)
+        assertEquals(3, afterR3.winnerId)
+        assertEquals(3, afterR3.players[2].roundWins)
+        assertEquals(null, afterR3.hurtFeelingsPlayerId)
+    }
+
+    @Test
+    fun moodSwings_2PlayerAnd2v2DoNotAssignHurtFeelings() {
+        val twoPlayer = com.setholson.gametracker.model.MoodSwingsState(
+            mode = com.setholson.gametracker.model.MoodSwingsMode.TWO_PLAYER,
+            players = listOf(
+                com.setholson.gametracker.model.MoodSwingsPlayer(1, "Seth", currentRoundScore = 14),
+                com.setholson.gametracker.model.MoodSwingsPlayer(2, "Alex", currentRoundScore = 9),
+            ),
+        )
+        val next = com.setholson.gametracker.model.resolveMoodSwingsRound(twoPlayer)
+        assertEquals(1, next.players[0].roundWins)
+        assertEquals(null, next.hurtFeelingsPlayerId)
+    }
 }

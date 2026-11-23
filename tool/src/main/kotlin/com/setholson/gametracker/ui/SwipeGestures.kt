@@ -5,12 +5,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 
 /**
- * Triggers [onBack] when the user swipes quickly from the left edge toward the right.
+ * Triggers [onBack] when the user deliberately swipes right starting from the left edge.
  */
 fun Modifier.swipeToBack(
-    sideOnly: Boolean = false,
-    edgeThresholdPx: Float = 260f,
-    swipeDistanceThresholdPx: Float = 70f,
+    sideOnly: Boolean = true,
+    edgeThresholdPx: Float = 150f,
+    swipeDistanceThresholdPx: Float = 110f,
     onBack: () -> Unit,
 ): Modifier = pointerInput(sideOnly, edgeThresholdPx, swipeDistanceThresholdPx) {
     var startX = 0f

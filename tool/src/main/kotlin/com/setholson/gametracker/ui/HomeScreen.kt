@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import com.setholson.gametracker.data.GameRepository
 import com.setholson.gametracker.db.GameDatabase
+import com.setholson.gametracker.model.MoodSwingsState
 import com.setholson.gametracker.model.MtgTableState
 import com.thelightphone.sdk.InitialScreen
 import com.thelightphone.sdk.LightScreen
@@ -51,6 +52,9 @@ class HomeViewModel(
     private val _savedMtg = MutableStateFlow<MtgTableState?>(null)
     val savedMtg: StateFlow<MtgTableState?> = _savedMtg.asStateFlow()
 
+    private val _savedMoodSwings = MutableStateFlow<MoodSwingsState?>(null)
+    val savedMoodSwings: StateFlow<MoodSwingsState?> = _savedMoodSwings.asStateFlow()
+
     private val _cachedCardCount = MutableStateFlow(0)
     val cachedCardCount: StateFlow<Int> = _cachedCardCount.asStateFlow()
 
@@ -65,6 +69,7 @@ class HomeViewModel(
         }
         viewModelScope.launch {
             _savedMtg.value = repository.loadMtgState()
+            _savedMoodSwings.value = repository.loadMoodSwingsState()
             _cachedCardCount.value = repository.getRecentCachedCards().size
         }
     }
@@ -101,6 +106,7 @@ class HomeScreen(
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
         val savedMtg by viewModel.savedMtg.collectAsState()
+        val savedMoodSwings by viewModel.savedMoodSwings.collectAsState()
         val cachedCardCount by viewModel.cachedCardCount.collectAsState()
         val isDark = LightThemeController.isDarkTheme
 
@@ -200,6 +206,25 @@ class HomeScreen(
                             variant = LightTextVariant.Detail,
                             lighten = true,
                             modifier = Modifier.padding(end = rightPad, bottom = 6.dp),
+                        )
+
+                        val activeMoodSwings = savedMoodSwings?.takeIf { ms ->
+                            ms.winnerId == null && (ms.roundNumber > 1 || ms.players.any { it.currentRoundScore > 0 })
+                        }
+                        HomeActionRow(
+                            title = "Mood Swings",
+                            subtitle = if (activeMoodSwings != null) {
+                                activeMoodSwings.players.joinToString(" • ") { p ->
+                                    "${p.name.take(8)} ${p.roundWins}W"
+                                }
+                            } else {
+                                "2–4P or 2v2 • First to 3 rounds, tiebreaks & Hurt Feelings"
+                            },
+                            badge = activeMoodSwings?.let { "R${it.roundNumber}" },
+                            onClick = {
+                                navigateTo(screenFactory = { act -> MoodSwingsScreen(act) })
+                            },
+                            modifier = Modifier.padding(end = rightPad),
                         )
 
                         HomeActionRow(

@@ -3,6 +3,7 @@ package com.setholson.gametracker.data
 import com.setholson.gametracker.db.CachedMtgCardEntity
 import com.setholson.gametracker.db.GameDatabase
 import com.setholson.gametracker.db.SavedGameStateEntity
+import com.setholson.gametracker.model.MoodSwingsState
 import com.setholson.gametracker.model.MtgCardDetail
 import com.setholson.gametracker.model.MtgCardRuling
 import com.setholson.gametracker.model.MtgTableState
@@ -47,6 +48,19 @@ class GameRepository(
         runCatching {
             database.gameDao().saveState(
                 SavedGameStateEntity(KEY_SCOREBOARD_STATE, json.encodeToString(state))
+            )
+        }
+    }
+
+    suspend fun loadMoodSwingsState(): MoodSwingsState? = withContext(Dispatchers.IO) {
+        val raw = database.gameDao().getStateJson(KEY_MOOD_SWINGS_STATE) ?: return@withContext null
+        runCatching { json.decodeFromString<MoodSwingsState>(raw) }.getOrNull()
+    }
+
+    suspend fun saveMoodSwingsState(state: MoodSwingsState) = withContext(Dispatchers.IO) {
+        runCatching {
+            database.gameDao().saveState(
+                SavedGameStateEntity(KEY_MOOD_SWINGS_STATE, json.encodeToString(state))
             )
         }
     }
@@ -113,6 +127,7 @@ class GameRepository(
         const val DATABASE_NAME = "light_gametracker.db"
         private const val KEY_MTG_STATE = "mtg_table_state"
         private const val KEY_SCOREBOARD_STATE = "scoreboard_state"
+        private const val KEY_MOOD_SWINGS_STATE = "mood_swings_state"
 
         @Volatile
         private var instance: GameRepository? = null
