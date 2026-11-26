@@ -198,10 +198,27 @@ class DiceCoinScreen(
     sealedActivity: SealedLightActivity,
 ) : LightScreen<Unit, DiceCoinViewModel>(sealedActivity) {
 
+    private val isForegroundFlow = MutableStateFlow(true)
+
     override val viewModelClass: Class<DiceCoinViewModel>
         get() = DiceCoinViewModel::class.java
 
     override fun createViewModel() = DiceCoinViewModel()
+
+    override fun willShow() {
+        super.willShow()
+        isForegroundFlow.value = true
+    }
+
+    override fun willHide() {
+        isForegroundFlow.value = false
+        super.willHide()
+    }
+
+    override fun onAppPause() {
+        isForegroundFlow.value = false
+        super.onAppPause()
+    }
 
     @Composable
     override fun Content() {
@@ -211,6 +228,7 @@ class DiceCoinScreen(
         val isRolling by viewModel.isRolling.collectAsState()
         val justLanded by viewModel.justLanded.collectAsState()
         val history by viewModel.history.collectAsState()
+        val isForeground by isForegroundFlow.collectAsState()
         val haptics = LocalHapticFeedback.current
 
         val tickHaptic = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
@@ -227,7 +245,8 @@ class DiceCoinScreen(
                     .swipeToBack { goBack() },
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    LightTopBar(
+                    BatteryTopBar(
+                        isForeground = isForeground,
                         leftButton = LightBarButton.LightIcon(
                             icon = LightIcons.BACK,
                             onClick = { goBack() },

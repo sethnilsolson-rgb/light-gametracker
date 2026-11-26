@@ -65,9 +65,31 @@ class ChessClockViewModel : LightViewModel<Unit>() {
     val ui: StateFlow<ChessClockUiState> = _ui.asStateFlow()
 
     private var tickJob: Job? = null
+    private var lastTickNanos: Long = 0L
+
+    private fun flushActiveElapsed(): ChessClockUiState {
+        val current = _ui.value
+        if (!current.isRunning || current.activePlayer == null || lastTickNanos == 0L) return current
+        val now = System.nanoTime()
+        val elapsedMs = ((now - lastTickNanos) / 1_000_000L).coerceAtLeast(0L)
+        lastTickNanos = now
+        if (elapsedMs <= 0L) return current
+
+        val updated = if (current.activePlayer == 1) {
+            val next = (current.p1Millis - elapsedMs).coerceAtLeast(0L)
+            if (next == 0L) current.copy(p1Millis = 0L, isRunning = false, flaggedPlayer = 1)
+            else current.copy(p1Millis = next)
+        } else {
+            val next = (current.p2Millis - elapsedMs).coerceAtLeast(0L)
+            if (next == 0L) current.copy(p2Millis = 0L, isRunning = false, flaggedPlayer = 2)
+            else current.copy(p2Millis = next)
+        }
+        _ui.value = updated
+        return updated
+    }
 
     fun tapPlayerZone(player: Int) {
-        val current = _ui.value
+        val current = flushActiveElapsed()
         if (current.flaggedPlayer != null) return
 
         // If clock hasn't started yet, tapping Player 1 starts Player 2's clock (and vice versa)
@@ -96,6 +118,7 @@ class ChessClockViewModel : LightViewModel<Unit>() {
             )
         }
         _ui.value = updated
+        startTicking()
     }
 
     fun togglePause() {
@@ -111,8 +134,10 @@ class ChessClockViewModel : LightViewModel<Unit>() {
     }
 
     fun pause() {
+        flushActiveElapsed()
         tickJob?.cancel()
         tickJob = null
+        lastTickNanos = 0L
         if (_ui.value.isRunning) {
             _ui.value = _ui.value.copy(isRunning = false)
         }
@@ -144,34 +169,22 @@ class ChessClockViewModel : LightViewModel<Unit>() {
 
     private fun startTicking() {
         tickJob?.cancel()
+        lastTickNanos = System.nanoTime()
         tickJob = viewModelScope.launch {
-            var lastNanos = System.nanoTime()
             while (isActive) {
-                delay(100L)
-                val now = System.nanoTime()
-                val elapsedMs = ((now - lastNanos) / 1_000_000L).coerceAtLeast(0L)
-                lastNanos = now
-
-                val current = _ui.value
-                if (!current.isRunning || current.activePlayer == null) break
-
-                if (current.activePlayer == 1) {
-                    val next = (current.p1Millis - elapsedMs).coerceAtLeast(0L)
-                    if (next == 0L) {
-                        _ui.value = current.copy(p1Millis = 0L, isRunning = false, flaggedPlayer = 1)
-                        break
-                    } else {
-                        _ui.value = current.copy(p1Millis = next)
-                    }
+                val cur = _ui.value
+                if (!cur.isRunning || cur.activePlayer == null) break
+                val remMs = if (cur.activePlayer == 1) cur.p1Millis else cur.p2Millis
+                // Adaptive cadence: 100ms only in final 20s when tenths are shown;
+                // whole-second aligned sleep otherwise (~90% fewer wakeups & recompositions).
+                val sleepMs = if (remMs <= 20_500L) {
+                    100L
                 } else {
-                    val next = (current.p2Millis - elapsedMs).coerceAtLeast(0L)
-                    if (next == 0L) {
-                        _ui.value = current.copy(p2Millis = 0L, isRunning = false, flaggedPlayer = 2)
-                        break
-                    } else {
-                        _ui.value = current.copy(p2Millis = next)
-                    }
+                    ((remMs - 1L) % 1000L + 15L).coerceIn(100L, 1000L)
                 }
+                delay(sleepMs)
+                val next = flushActiveElapsed()
+                if (!next.isRunning || next.activePlayer == null) break
             }
         }
     }
@@ -197,20 +210,38 @@ class ChessClockScreen(
     sealedActivity: SealedLightActivity,
 ) : LightScreen<Unit, ChessClockViewModel>(sealedActivity) {
 
+    private val isForegroundFlow = MutableStateFlow(true)
+
     override val viewModelClass: Class<ChessClockViewModel>
         get() = ChessClockViewModel::class.java
 
     override fun createViewModel() = ChessClockViewModel()
 
+    override fun willShow() {
+        super.willShow()
+        isForegroundFlow.value = true
+    }
+
+    override fun willHide() {
+        isForegroundFlow.value = false
+        super.willHide()
+    }
+
+    override fun onAppPause() {
+        isForegroundFlow.value = false
+        super.onAppPause()
+    }
+
     @Composable
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
         val ui by viewModel.ui.collectAsState()
+        val isForeground by isForegroundFlow.collectAsState()
         val haptics = LocalHapticFeedback.current
         val lineColor = LightThemeTokens.colors.content.copy(alpha = 0.28f)
 
         LightTheme(colors = themeColors) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(LightThemeTokens.colors.background)
@@ -219,68 +250,77 @@ class ChessClockScreen(
                         goBack()
                     },
             ) {
-                // Top Player (Player 2, rotated 180°)
-                ClockHalf(
-                    label = "Player 2",
-                    millis = ui.p2Millis,
-                    moves = ui.p2Moves,
-                    isActive = ui.activePlayer == 2 && ui.isRunning,
-                    isFlagged = ui.flaggedPlayer == 2,
-                    rotated = true,
-                    onTap = {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.tapPlayerZone(2)
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                )
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Top Player (Player 2, rotated 180°)
+                    ClockHalf(
+                        label = "Player 2",
+                        millis = ui.p2Millis,
+                        moves = ui.p2Moves,
+                        isActive = ui.activePlayer == 2 && ui.isRunning,
+                        isFlagged = ui.flaggedPlayer == 2,
+                        rotated = true,
+                        onTap = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.tapPlayerZone(2)
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
 
-                // Thin Center Strip
-                HorizontalDivider(thickness = 1.dp, color = lineColor)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(42.dp)
-                        .background(LightThemeTokens.colors.background)
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    ClockControlBtn("←") {
-                        viewModel.pause()
-                        goBack()
+                    // Thin Center Strip
+                    HorizontalDivider(thickness = 1.dp, color = lineColor)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp)
+                            .background(LightThemeTokens.colors.background)
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        ClockControlBtn("←") {
+                            viewModel.pause()
+                            goBack()
+                        }
+                        ClockControlBtn(if (ui.isRunning) "Pause" else "Start") {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.togglePause()
+                        }
+                        ClockControlBtn(ui.preset.label) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.cyclePreset()
+                        }
+                        ClockControlBtn("Reset") {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.reset()
+                        }
                     }
-                    ClockControlBtn(if (ui.isRunning) "Pause" else "Start") {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        viewModel.togglePause()
-                    }
-                    ClockControlBtn(ui.preset.label) {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.cyclePreset()
-                    }
-                    ClockControlBtn("Reset") {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        viewModel.reset()
-                    }
+                    HorizontalDivider(thickness = 1.dp, color = lineColor)
+
+                    // Bottom Player (Player 1, upright)
+                    ClockHalf(
+                        label = "Player 1",
+                        millis = ui.p1Millis,
+                        moves = ui.p1Moves,
+                        isActive = ui.activePlayer == 1 && ui.isRunning,
+                        isFlagged = ui.flaggedPlayer == 1,
+                        rotated = false,
+                        onTap = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.tapPlayerZone(1)
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
                 }
-                HorizontalDivider(thickness = 1.dp, color = lineColor)
 
-                // Bottom Player (Player 1, upright)
-                ClockHalf(
-                    label = "Player 1",
-                    millis = ui.p1Millis,
-                    moves = ui.p1Moves,
-                    isActive = ui.activePlayer == 1 && ui.isRunning,
-                    isFlagged = ui.flaggedPlayer == 1,
-                    rotated = false,
-                    onTap = {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.tapPlayerZone(1)
-                    },
+                CornerBatteryBadge(
+                    isForeground = isForeground,
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
+                        .align(Alignment.TopEnd)
+                        .padding(top = 6.dp, end = 8.dp),
                 )
             }
         }

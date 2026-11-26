@@ -100,7 +100,24 @@ class HomeScreen(
     override val viewModelClass: Class<HomeViewModel>
         get() = HomeViewModel::class.java
 
+    private val isForegroundFlow = MutableStateFlow(true)
+
     override fun createViewModel() = HomeViewModel(repository)
+
+    override fun willShow() {
+        super.willShow()
+        isForegroundFlow.value = true
+    }
+
+    override fun willHide() {
+        isForegroundFlow.value = false
+        super.willHide()
+    }
+
+    override fun onAppPause() {
+        isForegroundFlow.value = false
+        super.onAppPause()
+    }
 
     @Composable
     override fun Content() {
@@ -108,6 +125,7 @@ class HomeScreen(
         val savedMtg by viewModel.savedMtg.collectAsState()
         val savedMoodSwings by viewModel.savedMoodSwings.collectAsState()
         val cachedCardCount by viewModel.cachedCardCount.collectAsState()
+        val isForeground by isForegroundFlow.collectAsState()
         val isDark = LightThemeController.isDarkTheme
 
         LightTheme(colors = themeColors) {
@@ -117,7 +135,8 @@ class HomeScreen(
                     .background(LightThemeTokens.colors.background),
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    LightTopBar(
+                    BatteryTopBar(
+                        isForeground = isForeground,
                         center = LightTopBarCenter.Text("Game Tracker"),
                         modifier = Modifier.padding(bottom = 0.25f.gridUnitsAsDp()),
                     )

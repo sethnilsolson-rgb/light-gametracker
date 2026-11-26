@@ -271,10 +271,27 @@ class MtgRulingsScreen(
         }
     }
 
+    private val isForegroundFlow = MutableStateFlow(true)
+
     override val viewModelClass: Class<MtgRulingsViewModel>
         get() = MtgRulingsViewModel::class.java
 
     override fun createViewModel() = MtgRulingsViewModel(repository)
+
+    override fun willShow() {
+        super.willShow()
+        isForegroundFlow.value = true
+    }
+
+    override fun willHide() {
+        isForegroundFlow.value = false
+        super.willHide()
+    }
+
+    override fun onAppPause() {
+        isForegroundFlow.value = false
+        super.onAppPause()
+    }
 
     @Composable
     override fun Content() {
@@ -291,6 +308,7 @@ class MtgRulingsScreen(
         val cardB by viewModel.cardB.collectAsState()
         val guideQuery by viewModel.guideQuery.collectAsState()
         val expandedTopicId by viewModel.expandedTopicId.collectAsState()
+        val isForeground by isForegroundFlow.collectAsState()
 
         val textFieldState = rememberTextFieldState("")
         val keyboardOptionsFlow = rememberKeyboardOptions()
@@ -324,7 +342,8 @@ class MtgRulingsScreen(
                     )
                 } else {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        LightTopBar(
+                        BatteryTopBar(
+                            isForeground = isForeground,
                             leftButton = LightBarButton.LightIcon(
                                 icon = LightIcons.BACK,
                                 onClick = { goBack() },

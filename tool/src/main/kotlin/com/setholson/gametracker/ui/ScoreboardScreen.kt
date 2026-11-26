@@ -234,10 +234,27 @@ class ScoreboardScreen(
         }
     }
 
+    private val isForegroundFlow = MutableStateFlow(true)
+
     override val viewModelClass: Class<ScoreboardViewModel>
         get() = ScoreboardViewModel::class.java
 
     override fun createViewModel() = ScoreboardViewModel(repository)
+
+    override fun willShow() {
+        super.willShow()
+        isForegroundFlow.value = true
+    }
+
+    override fun willHide() {
+        isForegroundFlow.value = false
+        super.willHide()
+    }
+
+    override fun onAppPause() {
+        isForegroundFlow.value = false
+        super.onAppPause()
+    }
 
     @Composable
     override fun Content() {
@@ -246,6 +263,7 @@ class ScoreboardScreen(
         val editAction by viewModel.editAction.collectAsState()
         val nertzPlayerId by viewModel.nertzCalcPlayerId.collectAsState()
         val showTableMenu by viewModel.showTableMenu.collectAsState()
+        val isForeground by isForegroundFlow.collectAsState()
 
         val textFieldState = rememberTextFieldState("")
         val keyboardOptionsFlow = rememberKeyboardOptions()
@@ -472,6 +490,14 @@ class ScoreboardScreen(
                         }
                     }
 
+                    CornerBatteryBadge(
+                        isForeground = isForeground,
+                        showBattery = !showTableMenu && nertzPlayerId == null,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 6.dp, end = 8.dp),
+                    )
+
                     // Table Options Overlay (Game Preset, +/- Player, Reset, List View)
                     if (showTableMenu) {
                         ScoreboardTableMenuOverlay(
@@ -499,7 +525,8 @@ class ScoreboardScreen(
                 } else {
                     // Single-Scorekeeper Upright List Mode
                     Column(modifier = Modifier.fillMaxSize()) {
-                        LightTopBar(
+                        BatteryTopBar(
+                            isForeground = isForeground,
                             leftButton = LightBarButton.LightIcon(
                                 icon = LightIcons.BACK,
                                 onClick = { goBack() },

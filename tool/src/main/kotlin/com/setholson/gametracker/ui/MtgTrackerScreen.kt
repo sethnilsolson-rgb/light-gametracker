@@ -388,10 +388,27 @@ class MtgTrackerScreen(
         }
     }
 
+    private val isForegroundFlow = MutableStateFlow(true)
+
     override val viewModelClass: Class<MtgTrackerViewModel>
         get() = MtgTrackerViewModel::class.java
 
     override fun createViewModel() = MtgTrackerViewModel(repository, presetPlayers, presetLife)
+
+    override fun willShow() {
+        super.willShow()
+        isForegroundFlow.value = true
+    }
+
+    override fun willHide() {
+        isForegroundFlow.value = false
+        super.willHide()
+    }
+
+    override fun onAppPause() {
+        isForegroundFlow.value = false
+        super.onAppPause()
+    }
 
     @Composable
     override fun Content() {
@@ -405,6 +422,7 @@ class MtgTrackerScreen(
         val pickingHighlightId by viewModel.pickingHighlightPlayerId.collectAsState()
         val statusBanner by viewModel.statusBanner.collectAsState()
         val canUndo by viewModel.canUndo.collectAsState()
+        val isForeground by isForegroundFlow.collectAsState()
         val haptics = LocalHapticFeedback.current
 
         val renameFieldState = rememberTextFieldState("")
@@ -587,6 +605,14 @@ class MtgTrackerScreen(
                             }
                         }
                     }
+
+                    CornerBatteryBadge(
+                        isForeground = isForeground,
+                        showBattery = !showMenu && cmdModalPlayerId == null,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 6.dp, end = 8.dp),
+                    )
 
                     // Clean Tabletop Options Overlay
                     if (showMenu) {

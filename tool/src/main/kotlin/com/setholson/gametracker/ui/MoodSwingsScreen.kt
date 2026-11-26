@@ -305,10 +305,27 @@ class MoodSwingsScreen(
         }
     }
 
+    private val isForegroundFlow = MutableStateFlow(true)
+
     override val viewModelClass: Class<MoodSwingsViewModel>
         get() = MoodSwingsViewModel::class.java
 
     override fun createViewModel() = MoodSwingsViewModel(repository)
+
+    override fun willShow() {
+        super.willShow()
+        isForegroundFlow.value = true
+    }
+
+    override fun willHide() {
+        isForegroundFlow.value = false
+        super.willHide()
+    }
+
+    override fun onAppPause() {
+        isForegroundFlow.value = false
+        super.onAppPause()
+    }
 
     private val roundWinWaveform = LightVibrationWaveform(
         durations = listOf(80.milliseconds, 60.milliseconds, 120.milliseconds),
@@ -324,6 +341,7 @@ class MoodSwingsScreen(
         val showMenu by viewModel.showMenu.collectAsState()
         val tableBanner by viewModel.tableBanner.collectAsState()
         val deltas by viewModel.deltas.collectAsState()
+        val isForeground by isForegroundFlow.collectAsState()
 
         val textFieldState = rememberTextFieldState("")
         val keyboardOptionsFlow = rememberKeyboardOptions()
@@ -486,6 +504,14 @@ class MoodSwingsScreen(
                         }
                     }
 
+                    CornerBatteryBadge(
+                        isForeground = isForeground,
+                        showBattery = !showMenu,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 6.dp, end = 8.dp),
+                    )
+
                     // Tabletop Menu Overlay (Mode, Undo, Zero Scores, Reset, History)
                     if (showMenu) {
                         MoodSwingsMenuOverlay(
@@ -514,7 +540,8 @@ class MoodSwingsScreen(
                 } else {
                     // Single-Scorekeeper Upright List Mode
                     Column(modifier = Modifier.fillMaxSize()) {
-                        LightTopBar(
+                        BatteryTopBar(
+                            isForeground = isForeground,
                             leftButton = LightBarButton.LightIcon(
                                 icon = LightIcons.BACK,
                                 onClick = { goBack() },
